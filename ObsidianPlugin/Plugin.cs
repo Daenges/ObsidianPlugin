@@ -50,8 +50,8 @@ namespace ObsidianPlugin
             string player = playerJoinEvent.Player.Username.ToLower();
             if (HelperFunctions.IsValidMcName(player))
             {
-                List<Mail> mailList = HelperFunctions.GetMailsFromFile();
-                foreach (Mail mail in mailList.Where(m => m.Recipient == player).ToArray())
+                List<OwnClasses.Mail> mailList = HelperFunctions.GetMailsFromFile();
+                foreach (OwnClasses.Mail mail in mailList.Where(m => m.Recipient == player).ToArray())
                 {
                     await playerJoinEvent.Player.SendMessageAsync(message: mail.Sender + " mailed: " + mail.Content);
                     mailList.Remove(mail);
@@ -65,7 +65,6 @@ namespace ObsidianPlugin
         }
     }
 
-
     [CommandRoot]
     public class MyCommandRoot
     {
@@ -77,7 +76,7 @@ namespace ObsidianPlugin
             string content = arguments.Substring(recipient.Length + 1);
 
             // Not dealing with this clown
-            if (recipient == ctx.Player.Username.ToLower())
+            if (ctx.IsPlayer && recipient == ctx.Player.Username.ToLower())
                 return;
 
             // Serious requests
@@ -87,13 +86,30 @@ namespace ObsidianPlugin
                     .SendMessageAsync(message: (ctx.IsPlayer ? ctx.Player.Username.ToLower() : "Server") + " mailed: " + content);
                 await ctx.Sender.SendMessageAsync(message: "The requested player is online! Forewarded message.");
             }
+            else if (!ctx.IsPlayer)
+            {
+                // Server executes /mail
+                List<OwnClasses.Mail> mailList = HelperFunctions.GetMailsFromFile();
+                mailList.Add(new OwnClasses.Mail
+                {
+                    Sender = ctx.IsPlayer ? ctx.Player.Username.ToLower() : "Server",
+                    Recipient = recipient,
+                    Content = content,
+                    TimeOfSending = DateTime.Now
+                }
+                );
+
+                HelperFunctions.SafeMailsToFile(mailList);
+                await ctx.Sender.SendMessageAsync(message: "Mail saved successfuly!");
+            }
             else if (HelperFunctions.IsValidMcName(recipient) && !string.IsNullOrEmpty(content))
             {
-                List<Mail> mailList = HelperFunctions.GetMailsFromFile();
+                // Player executes /mail
+                List<OwnClasses.Mail> mailList = HelperFunctions.GetMailsFromFile();
 
                 if (mailList.Where(mail => mail.Sender == ctx.Player.Username.ToLower()).Count() < 5)
                 {
-                    mailList.Add(new Mail
+                    mailList.Add(new OwnClasses.Mail
                     {
                         Sender = ctx.IsPlayer ? ctx.Player.Username.ToLower() : "Server",
                         Recipient = recipient,
@@ -125,30 +141,27 @@ namespace ObsidianPlugin
             public async Task DefaultCommandAsync(CommandContext ctx, [Remaining] string arguments)
             {
                 string[] args = arguments.Split();
-                string sender = ctx.Player.Username.ToLower();
+                string sender = ctx.Player.Username.ToLower();                   
 
-                    int messageNum;
-                    try
-                    {
-                        messageNum = Convert.ToInt32(args[0]);
-                    } 
-                    catch (Exception) 
-                    {
-                        await ctx.Player.SendMessageAsync(message: "Invalid number! Use '/delmail [Number]'");
-                        return;
-                    }
+                List<OwnClasses.Mail> mailList = HelperFunctions.GetMailsFromFile();
 
-                    List<Mail> mailList = HelperFunctions.GetMailsFromFile();
+                // Find all mails of player and sort them like the display list.
+                List<OwnClasses.Mail> mailsFromSender = HelperFunctions.GetMailsFromFile()
+                    .Where(mail => mail.Sender == sender)
+                    .OrderBy(mail => mail.Content.Substring(0, 10)).ToList();
 
-                    // Find all mails of player and sort them like the display list.
-                    List<Mail> mailsFromSender = HelperFunctions.GetMailsFromFile()
-                        .Where(mail => mail.Sender == sender)
-                        .OrderBy(mail => mail.Content.Substring(0, 10)).ToList();
+                // Delete the selected mail.
+                try
+                {
+                    mailList.Remove(mailsFromSender[Convert.ToInt32(args[0])]);
+                }
+                catch (Exception)
+                {
+                    await ctx.Player.SendMessageAsync(message: "Invalid number! Use '/delmail [Number]'");
+                    return;
+                }
 
-                    // Delete the selected mail.
-                    mailList.Remove(mailsFromSender[messageNum]);
-
-                    HelperFunctions.SafeMailsToFile(mailList);
+                HelperFunctions.SafeMailsToFile(mailList);
                 
             }
 
@@ -178,17 +191,6 @@ namespace ObsidianPlugin
     }
 
     /// <summary>
-    /// Class to save messages in.
-    /// </summary>
-    public class Mail
-    {
-        public string Sender { get; set; }
-        public string Recipient { get; set; }
-        public string Content { get; set; }
-        public DateTime TimeOfSending { get; set; }
-    }
-
-    /// <summary>
     /// Functions needed for operation in several commands.
     /// </summary>
     static class HelperFunctions
@@ -210,27 +212,42 @@ namespace ObsidianPlugin
         /// Deserializes mails from a file.
         /// </summary>
         /// <returns>A list of deserialized mails.</returns>
-        public static List<Mail> GetMailsFromFile()
+        public static List<OwnClasses.Mail> GetMailsFromFile()
         {
             if (File.Exists(Directory.GetCurrentDirectory() + "\\plugins\\Mail\\Mails.json"))
             {
                 try
                 {
-                    return JsonSerializer.Deserialize<List<Mail>>(File.ReadAllText(Directory.GetCurrentDirectory() + "\\plugins\\Mail\\Mails.json"));
+                    return JsonSerializer.Deserialize<List<OwnClasses.Mail>>(File.ReadAllText(Directory.GetCurrentDirectory() + "\\plugins\\Mail\\Mails.json"));
                 }
                 catch (JsonException) { Console.WriteLine("[Mail] Unable to read the Database. Creating a new one."); }
             }
 
-            return new List<Mail>();
+            return new List<OwnClasses.Mail>();
         }
 
         /// <summary>
         /// Serializes a given mail list to JSON and saves the result in a file.
         /// </summary>
         /// <param name="mailList">provided Maillist</param>
-        public static void SafeMailsToFile(List<Mail> mailList)
+        public static void SafeMailsToFile(List<OwnClasses.Mail> mailList)
         {
             File.WriteAllText(Directory.GetCurrentDirectory() + "\\plugins\\Mail\\Mails.json", JsonSerializer.Serialize(mailList));
         }
+    }
+}
+
+namespace OwnClasses 
+{
+
+    /// <summary>
+    /// Class to save messages in.
+    /// </summary>
+    public class Mail
+    {
+        public string Sender { get; set; }
+        public string Recipient { get; set; }
+        public string Content { get; set; }
+        public DateTime TimeOfSending { get; set; }
     }
 }

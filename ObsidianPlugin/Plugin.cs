@@ -85,25 +85,37 @@ namespace ObsidianPlugin
         [CommandInfo(description: "mail <player> [content] - sends a message, that is saved until the adressed player joins.")]
         public async Task PluginCommandAsync(CommandContext ctx, [Remaining] string arguments)
         {
-            List<OwnClasses.Mail> mailList = getMailsFromFile();
+            string recipient = arguments.Split()[0].ToLower();
+            string content = arguments.Substring(recipient.Length + 1);
+            List<string> onlinePlayers = ctx.Server.Players.Select(player => player.Username.ToLower()).ToList();
 
-            string recipient = arguments.Split()[0];
-            string content = arguments.Substring(recipient.Length + 1); 
+            if (onlinePlayers.Contains(recipient)) 
+            {
+                await ctx.Server.GetPlayer(ctx.Server.Players.Where(player => player.Username.ToLower() == recipient).First().Username.ToString())
+                    .SendMessageAsync(message: (ctx.IsPlayer ? ctx.Player.Username : "Server") + " mailed: " + content);
+                await ctx.Sender.SendMessageAsync(message: "The requested player is online! Forewarded message.");
+                return;
+            }
+
             if (isValidMcName(recipient) && !string.IsNullOrEmpty(content))
             {
+                List<OwnClasses.Mail> mailList = getMailsFromFile();
+
                 mailList.Add(new OwnClasses.Mail
                 {
-                    Sender = ctx.Player == null ? "Server" : ctx.Player.Username.ToLower(),
-                    Recipient = recipient.ToLower(),
+                    Sender = ctx.IsPlayer ? ctx.Player.Username.ToLower() : "Server",
+                    Recipient = recipient,
                     Content = content,
                     TimeOfSending = DateTime.Now
                 }
                 );
+                safeMailsToFile(mailList);
+                await ctx.Sender.SendMessageAsync(message: "Mail saved successfuly!");
             }
-
-            safeMailsToFile(mailList);
-
-            await ctx.Sender.SendMessageAsync(message: "Hello from plugin command implemented in Plugin class!");
+            else 
+            {
+                await ctx.Sender.SendMessageAsync(message: "Mail could not be saved.");
+            }
         }
 
         public async Task OnPlayerJoin(PlayerJoinEventArgs playerJoinEvent)

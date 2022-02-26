@@ -29,11 +29,14 @@ namespace ObsidianPlugin
 {
     [Plugin(name: "Mail", Version = "1.0",
             Authors = "Daenges", Description = "Save messages and send them to players when they are online again.",
-            ProjectUrl = "https://github.com/ObsidianMC/Obsidian")]
+            ProjectUrl = "https://github.com/Daenges/ObsidianPlugin")]
 
     public class ObsidianPlugin : PluginBase
     {
-        // One of server messages, called when an event occurs
+        /// <summary>
+        /// Prepare folder and file for operation.
+        /// </summary>
+        /// <param name="server"></param>
         public void OnLoad(IServer server)
         {
             if (!Directory.Exists(Directory.GetCurrentDirectory() + "\\plugins\\Mail"))
@@ -58,59 +61,69 @@ namespace ObsidianPlugin
         /// Deserializes mails from a file.
         /// </summary>
         /// <returns>A list of deserialized mails.</returns>
-        private List<OwnClasses.Mail> getMailsFromFile()
+        private List<Mail> getMailsFromFile()
         {
             if (File.Exists(Directory.GetCurrentDirectory() + "\\plugins\\Mail\\Mails.json"))
             {
                 try
                 {
-                    return JsonSerializer.Deserialize<List<OwnClasses.Mail>>(File.ReadAllText(Directory.GetCurrentDirectory() + "\\plugins\\Mail\\Mails.json"));
+                    return JsonSerializer.Deserialize<List<Mail>>(File.ReadAllText(Directory.GetCurrentDirectory() + "\\plugins\\Mail\\Mails.json"));
                 }
                 catch (JsonException) { Console.WriteLine("[Mail] Unable to read the Database. Creating a new one."); }
             }
 
-            return new List<OwnClasses.Mail>();
+            return new List<Mail>();
         }
 
         /// <summary>
         /// Serializes a given mail list to JSON and saves the result in a file.
         /// </summary>
         /// <param name="mailList">provided Maillist</param>
-        private void safeMailsToFile(List<OwnClasses.Mail> mailList)
+        private void safeMailsToFile(List<Mail> mailList)
         {
             File.WriteAllText(Directory.GetCurrentDirectory() + "\\plugins\\Mail\\Mails.json", JsonSerializer.Serialize(mailList));
         }
 
         [Command(commandName: "mail")]
-        [CommandInfo(description: "mail <player> [content] - sends a message, that is saved until the adressed player joins.")]
+        [CommandInfo(description: "mail <player> [content] - Sends a message, that is saved until the adressed player joins.")]
         public async Task PluginCommandAsync(CommandContext ctx, [Remaining] string arguments)
         {
             string recipient = arguments.Split()[0].ToLower();
             string content = arguments.Substring(recipient.Length + 1);
-            List<string> onlinePlayers = ctx.Server.Players.Select(player => player.Username.ToLower()).ToList();
 
-            if (onlinePlayers.Contains(recipient)) 
-            {
-                await ctx.Server.GetPlayer(ctx.Server.Players.Where(player => player.Username.ToLower() == recipient).First().Username.ToString())
-                    .SendMessageAsync(message: (ctx.IsPlayer ? ctx.Player.Username : "Server") + " mailed: " + content);
-                await ctx.Sender.SendMessageAsync(message: "The requested player is online! Forewarded message.");
+            // Not dealing with this
+            if (recipient == ctx.Player.Username.ToLower())
                 return;
-            }
 
-            if (isValidMcName(recipient) && !string.IsNullOrEmpty(content))
+            // Serious requests
+            if (ctx.Server.IsPlayerOnline(recipient)) 
             {
-                List<OwnClasses.Mail> mailList = getMailsFromFile();
+                await ctx.Server.GetPlayer(recipient)
+                    .SendMessageAsync(message: (ctx.IsPlayer ? ctx.Player.Username.ToLower() : "Server") + " mailed: " + content);
+                await ctx.Sender.SendMessageAsync(message: "The requested player is online! Forewarded message.");
+            }
+            else if (isValidMcName(recipient) && !string.IsNullOrEmpty(content))
+            {
+                List<Mail> mailList = getMailsFromFile();
 
-                mailList.Add(new OwnClasses.Mail
+                if (mailList.Where(mail => mail.Sender == ctx.Player.Username.ToLower()).Count() < 5)
                 {
-                    Sender = ctx.IsPlayer ? ctx.Player.Username.ToLower() : "Server",
-                    Recipient = recipient,
-                    Content = content,
-                    TimeOfSending = DateTime.Now
+                    mailList.Add(new Mail
+                    {
+                        Sender = ctx.IsPlayer ? ctx.Player.Username.ToLower() : "Server",
+                        Recipient = recipient,
+                        Content = content,
+                        TimeOfSending = DateTime.Now
+                    }
+                    );
+
+                    safeMailsToFile(mailList);
+                    await ctx.Sender.SendMessageAsync(message: "Mail saved successfuly!");
                 }
-                );
-                safeMailsToFile(mailList);
-                await ctx.Sender.SendMessageAsync(message: "Mail saved successfuly!");
+                else 
+                {
+                    await ctx.Sender.SendMessageAsync(message: "You reached the personal maximum capacity of 5 mails.");
+                }
             }
             else 
             {
@@ -123,20 +136,24 @@ namespace ObsidianPlugin
             string player = playerJoinEvent.Player.Username.ToLower();
             if (isValidMcName(player))
             {
-                List<OwnClasses.Mail> mailList = getMailsFromFile();
-                foreach (OwnClasses.Mail mail in mailList.Where(m => m.Recipient == player).ToArray())
+                List<Mail> mailList = getMailsFromFile();
+                foreach (Mail mail in mailList.Where(m => m.Recipient == player).ToArray())
                 {
                     await playerJoinEvent.Player.SendMessageAsync(message: mail.Sender + " mailed: " + mail.Content);
                     mailList.Remove(mail);
                 }
+
+                // Clear mails older than 30 days.
+                mailList = mailList.Where(mail => (DateTime.Now - mail.TimeOfSending).TotalDays < 31).ToList();
+
                 safeMailsToFile(mailList);
             }
         }
     }
-}
 
-namespace OwnClasses
-{
+    /// <summary>
+    /// Class to save messages in.
+    /// </summary>
     public class Mail
     {
         public string Sender { get; set; }

@@ -168,7 +168,8 @@ namespace ObsidianPlugin
                     OwnClasses.Mail mailToBeDeleted;
                     try
                     {
-                        mailToBeDeleted = mailsFromSender[mailnum];
+                        mailToBeDeleted = mailList[mailnum];
+                        mailList.RemoveAt(mailnum);
                     }
                     catch (Exception)
                     {
@@ -176,7 +177,6 @@ namespace ObsidianPlugin
                         return;
                     }
 
-                    var test = mailList.Remove(mailToBeDeleted);
                     await ctx.Player.SendMessageAsync(message: String.Format("Deleted mail to {0}: {1}", mailToBeDeleted.Recipient, mailToBeDeleted.Content));
 
                     HelperFunctions.SafeMailsToFile(mailList);

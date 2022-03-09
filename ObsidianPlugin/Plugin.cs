@@ -141,27 +141,50 @@ namespace ObsidianPlugin
             public async Task DefaultCommandAsync(CommandContext ctx, [Remaining] string arguments)
             {
                 string[] args = arguments.Split();
-                string sender = ctx.Player.Username.ToLower();                   
 
-                List<OwnClasses.Mail> mailList = HelperFunctions.GetMailsFromFile();
-
-                // Find all mails of player and sort them like the display list.
-                List<OwnClasses.Mail> mailsFromSender = HelperFunctions.GetMailsFromFile()
-                    .Where(mail => mail.Sender == sender)
-                    .OrderBy(mail => mail.Content.Substring(0, 10)).ToList();
-
-                // Delete the selected mail.
-                try
+                if (args.Length == 1)
                 {
-                    mailList.Remove(mailsFromSender[Convert.ToInt32(args[0])]);
-                }
-                catch (Exception)
-                {
-                    await ctx.Player.SendMessageAsync(message: "Invalid number! Use '/delmail [Number]'");
-                    return;
-                }
+                    string sender = ctx.Player.Username.ToLower();
+                    int mailnum;
 
-                HelperFunctions.SafeMailsToFile(mailList);
+                    try
+                    {
+                        mailnum = Convert.ToInt32(args[0]) - 1;
+                    }
+                    catch (Exception)
+                    {
+                        await ctx.Player.SendMessageAsync(message: "Invalid number! Use '/delmail [Number]'");
+                        return;
+                    }
+
+                    List<OwnClasses.Mail> mailList = HelperFunctions.GetMailsFromFile();
+
+                    // Find all mails of player and sort them like the display list.
+                    List<OwnClasses.Mail> mailsFromSender = HelperFunctions.GetMailsFromFile()
+                        .Where(mail => mail.Sender == sender)
+                        .OrderBy(mail => mail.Content.Length <= 10 ? mail.Content : mail.Content.Substring(0, 10)).ToList();
+
+                    // Delete the selected mail.
+                    OwnClasses.Mail mailToBeDeleted;
+                    try
+                    {
+                        mailToBeDeleted = mailsFromSender[mailnum];
+                    }
+                    catch (Exception)
+                    {
+                        await ctx.Player.SendMessageAsync(message: "Invalid number! Use '/delmail [Number]'");
+                        return;
+                    }
+
+                    var test = mailList.Remove(mailToBeDeleted);
+                    await ctx.Player.SendMessageAsync(message: String.Format("Deleted mail to {0}: {1}", mailToBeDeleted.Recipient, mailToBeDeleted.Content));
+
+                    HelperFunctions.SafeMailsToFile(mailList);
+                }
+                else
+                {
+                    await ctx.Player.SendMessageAsync(message: "Use '/delmail list' to see all your saved messages.");
+                }
                 
             }
 
@@ -173,7 +196,7 @@ namespace ObsidianPlugin
 
                 List<string> mailContentList = HelperFunctions.GetMailsFromFile()
                         .Where(mail => mail.Sender == sender)
-                        .Select(mail => mail.Content.Substring(0, 10)).ToList();
+                        .Select(mail => mail.Content.Length <= 10 ? mail.Content : mail.Content.Substring(0, 10)).ToList();
                 mailContentList.Sort();
 
                 string textListOfMails = string.Format("You have {0} mails saved:\n", mailContentList.Count);
